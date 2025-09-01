@@ -1,64 +1,42 @@
-<<<<<<< HEAD
-# WordPress on Kubernetes with Monitoring
+# WordPress on Kubernetes - Usage Guide
 
-A complete production-ready WordPress deployment on Kubernetes with MySQL database, NGINX Ingress, and comprehensive monitoring using Prometheus and Grafana.
+A complete WordPress deployment on Kubernetes with MySQL database and monitoring stack (Prometheus + Grafana).
 
-## Project Overview
-
-This project demonstrates the migration of a WordPress application from Docker Compose to Kubernetes, implementing best practices for container orchestration, persistent storage, networking, and monitoring.
-
-### Architecture
+## Project Structure
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   NGINX Ingress │    │   WordPress      │    │     MySQL       │
-│   Controller    │───►│   (2 replicas)   │───►│   StatefulSet   │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-        │                        │                       │
-        │                        │                       │
-        ▼                        ▼                       ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  External       │    │   ClusterIP      │    │  Persistent     │
-│  LoadBalancer   │    │   Service        │    │  Volume         │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+K8s_finalworkshop/
+├── README.md                    # This usage guide
+├── create-ecr-secret.sh        # Automated deployment script
+├── wordpress/                  # WordPress application manifests
+│   ├── namespace.yaml
+│   ├── secret.yaml
+│   ├── wordpress-pvc.yaml
+│   ├── mysql-statefulset.yaml
+│   ├── wordpress-deployment.yaml
+│   ├── mysql-service.yaml
+│   ├── wordpress-service.yaml
+│   └── wordpress-ingress.yaml
+├── monitoring/                 # Monitoring stack configuration
+│   ├── grafana_values.yaml
+│   └── prometheus_values.yaml
+└── templates/                  # Helm chart templates (optional)
 ```
-
-**Monitoring Stack:**
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Prometheus    │    │     Grafana      │    │  AlertManager   │
-│   (Metrics)     │◄──►│  (Dashboards)    │◄──►│   (Alerts)      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-## Features
-
-- **High Availability**: WordPress deployed with 2 replicas
-- **Persistent Storage**: MySQL data persisted using StatefulSet and PVC
-- **Container Registry**: Images stored in AWS ECR
-- **Ingress Controller**: NGINX for external access
-- **Security**: Kubernetes Secrets for sensitive data
-- **Monitoring**: Complete observability with Prometheus and Grafana
-- **Resource Management**: CPU and memory limits/requests configured
-- **Health Checks**: Readiness and liveness probes implemented
 
 ## Prerequisites
 
-- Kubernetes cluster (minikube, EKS, GKE, etc.)
+### System Requirements
+- AWS EC2 instance (Amazon Linux 2 recommended)
+- Minikube installed and running
 - kubectl configured
 - Helm 3.x installed
-- AWS ECR access (for container images)
-- Docker (for image operations)
+- AWS CLI configured with ECR access
 
-## Quick Start
-
-### 1. Prerequisites Setup
+### Quick Prerequisites Setup
 ```bash
-# Update system and install required packages
+# Install Docker
 sudo yum update -y
 sudo yum install git docker -y
-
-# Start Docker
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -a -G docker ec2-user
@@ -76,249 +54,187 @@ sudo install minikube-linux-amd64 /usr/local/bin/minikube
 
 # Start minikube
 minikube start --driver=docker
-
-# Verify installation
-kubectl get nodes
-helm version
 ```
 
-### 2. Configure AWS ECR Access
-```bash
-# Install AWS CLI if not present
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
+## Usage Instructions
 
-# Configure AWS credentials (replace with your credentials)
-aws configure set aws_access_key_id YOUR_ACCESS_KEY
-aws configure set aws_secret_access_key YOUR_SECRET_KEY
-aws configure set default.region us-east-1
+### Method 1: Automated Deployment (Recommended)
 
-# Login to ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 992382545251.dkr.ecr.us-east-1.amazonaws.com
-```
-
-### 3. Clone and Setup Repository
+1. **Clone the repository:**
 ```bash
 git clone <your-repo-url>
 cd K8s_finalworkshop
 ```
 
-### 4. Deploy NGINX Ingress Controller
+2. **Make the script executable:**
 ```bash
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
-helm install my-release ingress-nginx/nginx-ingress \
-  --namespace ingress-nginx \
-  --create-namespace
-
-# Wait for controller to be ready
-kubectl wait --namespace ingress-nginx \
-  --for=condition=ready pod \
-  --selector=app.kubernetes.io/component=controller \
-  --timeout=120s
+chmod +x create-ecr-secret.sh
 ```
 
-### 5. Deploy WordPress Application
+3. **Run the automated deployment:**
 ```bash
-# Create namespace and ECR secret
+./create-ecr-secret.sh
+```
+
+The script will:
+- Clean up existing resources
+- Create namespaces
+- Set up ECR authentication
+- Deploy WordPress and MySQL
+- Install monitoring stack
+- Set up port forwarding automatically
+
+### Method 2: Manual Deployment
+
+1. **Setup ECR authentication:**
+```bash
 kubectl create namespace wordpress
 kubectl create secret docker-registry ecr-secret \
   --docker-server=992382545251.dkr.ecr.us-east-1.amazonaws.com \
   --docker-username=AWS \
   --docker-password=$(aws ecr get-login-password --region us-east-1) \
   --namespace=wordpress
-
-# Deploy WordPress stack
-kubectl apply -f wordpress-deployment.yaml
-
-# Wait for deployment to be ready
-kubectl wait --for=condition=available --timeout=300s deployment/wordpress -n wordpress
 ```
 
-### 6. Install Monitoring Stack
+2. **Deploy WordPress stack:**
 ```bash
+# Deploy in order
+kubectl apply -f wordpress/namespace.yaml
+kubectl apply -f wordpress/secret.yaml
+kubectl apply -f wordpress/wordpress-pvc.yaml
+kubectl apply -f wordpress/mysql-statefulset.yaml
+kubectl apply -f wordpress/wordpress-deployment.yaml
+kubectl apply -f wordpress/mysql-service.yaml
+kubectl apply -f wordpress/wordpress-service.yaml
+kubectl apply -f wordpress/wordpress-ingress.yaml
+```
+
+3. **Install monitoring:**
+```bash
+helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
-helm install monitoring prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --create-namespace \
-  --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=2Gi \
-  --set grafana.persistence.enabled=true \
-  --set grafana.persistence.size=1Gi \
-  --wait
 
-# Wait for all monitoring pods to be ready
-kubectl wait --for=condition=ready pod --all -n monitoring --timeout=600s
+kubectl create namespace monitoring
+helm install grafana grafana/grafana -n monitoring -f monitoring/grafana_values.yaml
+helm install prometheus prometheus-community/prometheus -n monitoring -f monitoring/prometheus_values.yaml
 ```
 
-### 7. Verify Installation
+4. **Set up port forwarding:**
 ```bash
-# Check all deployments
-kubectl get all -n wordpress
-kubectl get all -n monitoring
-kubectl get all -n ingress-nginx
-
-# All pods should show Running status
-echo "WordPress Pods:"
-kubectl get pods -n wordpress
-echo "Monitoring Pods:"
-kubectl get pods -n monitoring  
-echo "Ingress Pods:"
-kubectl get pods -n ingress-nginx
+kubectl port-forward -n wordpress svc/wordpress-service 8080:80 --address=0.0.0.0 &
+kubectl port-forward -n monitoring svc/grafana 3000:80 --address=0.0.0.0 &
+kubectl port-forward -n monitoring svc/prometheus-server 9090:80 --address=0.0.0.0 &
 ```
 
-## Accessing Services
+## Accessing the Applications
 
-### WordPress Application
-```bash
-# Port forward to WordPress
-kubectl port-forward -n wordpress svc/wordpress-service 8080:80 --address=0.0.0.0
-# Access: http://your-server-ip:8080
-```
+### WordPress
+- **URL:** `http://your-ec2-ip:8080`
+- **Setup:** Follow the WordPress installation wizard
+- **Database:** Pre-configured to connect to MySQL automatically
 
 ### Grafana Dashboard
-```bash
-# Get admin password
-kubectl get secret -n monitoring monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 --decode
-
-# Port forward to Grafana
-kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80 --address=0.0.0.0
-# Access: http://your-server-ip:3000 (admin/<password>)
-```
+- **URL:** `http://your-ec2-ip:3000`
+- **Username:** `admin`
+- **Password:** `admin`
 
 ### Prometheus
-```bash
-# Port forward to Prometheus
-kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090 --address=0.0.0.0
-# Access: http://your-server-ip:9090
-```
+- **URL:** `http://your-ec2-ip:9090`
+- **Use:** Query metrics and check targets
 
-## File Structure
+## Creating Grafana Dashboards
 
-```
-K8s_finalworkshop/
-├── README.md                          # This file
-├── wordpress-deployment.yaml          # Main Kubernetes manifests
-├── Chart.yaml                         # Helm chart metadata
-├── values.yaml                        # Helm chart default values
-└── templates/
-    ├── deployment.yaml                # Application deployment template
-    ├── service.yaml                   # Service template
-    ├── ingress.yaml                   # Ingress template
-    ├── serviceaccount.yaml            # Service account template
-    ├── hpa.yaml                       # Horizontal Pod Autoscaler
-    ├── test-connection.yaml           # Helm test
-    ├── NOTES.txt                      # Post-installation notes
-    └── _helpers.tpl                   # Helm template helpers
-```
+### Step 1: Access Grafana
+1. Go to `http://your-ec2-ip:3000`
+2. Login with `admin/admin`
 
-## Kubernetes Resources
+### Step 2: Add Prometheus Data Source
+1. Go to Configuration → Data Sources
+2. Add Prometheus
+3. URL: `http://prometheus-server:80`
+4. Save & Test
 
-### WordPress Components
-- **Namespace**: `wordpress` - Isolated environment
-- **Deployment**: `wordpress` - 2 replicas with rolling updates
-- **Service**: `wordpress-service` - ClusterIP for internal access
-- **Ingress**: `wordpress-ingress` - External access via NGINX
+### Step 3: Create Dashboard
+1. Click "+" → Create Dashboard
+2. Add Panel
+3. Use these sample queries:
 
-### MySQL Database
-- **StatefulSet**: `mysql` - Ensures stable network identity
-- **PVC**: `mysql-pvc` - 2Gi persistent storage
-- **Service**: `mysql-service` - Database connectivity
-- **Secret**: `mysql-secret` - Database credentials
-
-### Security
-- **ECR Secret**: `ecr-secret` - AWS ECR authentication
-- **TLS**: Ready for certificate management
-- **RBAC**: Service accounts with minimal privileges
-
-## Monitoring and Observability
-
-### Metrics Collected
-- Container uptime and restart counts
-- Resource utilization (CPU, memory)
-- Network traffic and latency
-- Database connections and queries
-- Application response times
-
-### Grafana Dashboards
-Pre-configured dashboards include:
-- Kubernetes cluster overview
-- Pod and container metrics
-- WordPress application health
-- MySQL database performance
-
-### Key Prometheus Queries
+**WordPress Container Uptime:**
 ```promql
-# Container uptime
 kube_pod_container_status_running{namespace="wordpress"}
-
-# Resource usage
-container_memory_usage_bytes{namespace="wordpress"}
-rate(container_cpu_usage_seconds_total{namespace="wordpress"}[5m])
-
-# HTTP response times
-histogram_quantile(0.95, rate(nginx_ingress_controller_request_duration_seconds_bucket[5m]))
 ```
 
-## Configuration
-
-### Environment Variables
-All sensitive data is stored in Kubernetes Secrets:
-- `MYSQL_ROOT_PASSWORD`: Database root password
-- `MYSQL_DATABASE`: WordPress database name
-- `MYSQL_USER`: Database user
-- `MYSQL_PASSWORD`: Database password
-- `WORDPRESS_DB_HOST`: Database connection string
-
-### Resource Limits
-```yaml
-WordPress Containers:
-  requests: 256Mi memory, 100m CPU
-  limits: 512Mi memory, 500m CPU
-
-MySQL Container:
-  requests: 256Mi memory, 100m CPU
-  limits: 512Mi memory, 500m CPU
+**Memory Usage:**
+```promql
+container_memory_usage_bytes{namespace="wordpress"} / 1024 / 1024
 ```
 
-### Storage
-- MySQL data: 2Gi persistent volume
-- Grafana data: 1Gi persistent volume
-- Prometheus data: 2Gi persistent volume
+**CPU Usage:**
+```promql
+rate(container_cpu_usage_seconds_total{namespace="wordpress"}[5m]) * 100
+```
+
+## Configuration Details
+
+### WordPress Configuration
+- **Replicas:** 2 (High Availability)
+- **Image:** Custom WordPress from ECR
+- **Database:** MySQL 5.7 in StatefulSet
+- **Storage:** 2Gi persistent volume for MySQL data
+- **Resources:** 256Mi-512Mi memory, 100m-500m CPU
+
+### Database Credentials
+All stored in Kubernetes Secret `mysql-secret`:
+- Root Password: `password123`
+- Database: `wordpress` 
+- User: `wordpress`
+- Password: `wordpress123`
+
+### Monitoring Stack
+- **Grafana:** Admin UI on port 3000
+- **Prometheus:** Metrics collection on port 9090
+- **Storage:** 1Gi for Grafana, 2Gi for Prometheus
 
 ## Troubleshooting
 
 ### Common Issues
 
-**Pods in ImagePullBackOff:**
+**Pods not starting:**
 ```bash
-# Check ECR authentication
+kubectl get pods -n wordpress
 kubectl describe pod <pod-name> -n wordpress
-# Recreate ECR secret if needed
+kubectl logs <pod-name> -n wordpress
 ```
 
-**Database Connection Failed:**
+**ECR authentication failed:**
 ```bash
-# Check MySQL pod logs
-kubectl logs -n wordpress mysql-0
-# Verify secret values
+# Recreate ECR secret
+kubectl delete secret ecr-secret -n wordpress
+kubectl create secret docker-registry ecr-secret \
+  --docker-server=992382545251.dkr.ecr.us-east-1.amazonaws.com \
+  --docker-username=AWS \
+  --docker-password=$(aws ecr get-login-password --region us-east-1) \
+  --namespace=wordpress
+```
+
+**Services not accessible:**
+```bash
+# Check if port-forward is running
+ps aux | grep "kubectl port-forward"
+
+# Restart port-forward if needed
+pkill -f "kubectl port-forward"
+kubectl port-forward -n wordpress svc/wordpress-service 8080:80 --address=0.0.0.0 &
+```
+
+**Database connection issues:**
+```bash
+# Check MySQL pod
+kubectl logs mysql-0 -n wordpress
+
+# Verify secret
 kubectl get secret mysql-secret -n wordpress -o yaml
-```
-
-**Ingress Not Working:**
-```bash
-# Check ingress controller
-kubectl get pods -n ingress-nginx
-# Verify ingress configuration
-kubectl describe ingress wordpress-ingress -n wordpress
-```
-
-**Monitoring Not Collecting Data:**
-```bash
-# Check Prometheus targets
-kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090
-# Visit http://localhost:9090/targets
 ```
 
 ### Verification Commands
@@ -327,255 +243,97 @@ kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 909
 kubectl get all -n wordpress
 kubectl get all -n monitoring
 
-# Verify persistent volumes
+# Check persistent volumes
 kubectl get pvc -n wordpress
-kubectl get pvc -n monitoring
 
-# Check resource usage
-kubectl top pods -n wordpress
-kubectl top nodes
+# Test connectivity
+kubectl exec -it <wordpress-pod> -n wordpress -- curl mysql-service:3306
 ```
 
-## Scaling and High Availability
+## Cleanup
 
-### Horizontal Pod Autoscaling
+### Remove Everything
 ```bash
-# Enable HPA for WordPress
-kubectl autoscale deployment wordpress -n wordpress --cpu-percent=70 --min=2 --max=10
+# Delete namespaces (removes all resources)
+kubectl delete namespace wordpress monitoring
+
+# Stop port-forwards
+pkill -f "kubectl port-forward"
+
+# Remove Helm releases
+helm uninstall grafana -n monitoring
+helm uninstall prometheus -n monitoring
 ```
 
-### Database High Availability
-For production, consider:
-- MySQL replication setup
-- Database clustering (Galera, Percona XtraDB)
-- Backup and restore procedures
+### Selective Cleanup
+```bash
+# Only WordPress
+kubectl delete -f wordpress/
 
-### Storage Considerations
-- Use StorageClass with automatic provisioning
-- Implement backup strategies for PVCs
-- Consider distributed storage systems
+# Only monitoring
+helm uninstall grafana prometheus -n monitoring
+```
 
-## Security Best Practices
+## Customization
 
-- Images scanned for vulnerabilities
-- Non-root containers where possible
-- Network policies for traffic isolation
-- Regular secret rotation
-- HTTPS/TLS termination at ingress
-- Pod security policies enabled
+### Changing WordPress Configuration
+Edit `wordpress/wordpress-deployment.yaml`:
+- Modify environment variables
+- Adjust resource limits
+- Change replica count
 
-## Production Readiness Checklist
+### Updating Database Credentials
+1. Edit `wordpress/secret.yaml`
+2. Base64 encode new passwords:
+```bash
+echo -n 'newpassword' | base64
+```
+3. Apply changes:
+```bash
+kubectl apply -f wordpress/secret.yaml
+kubectl rollout restart deployment/wordpress -n wordpress
+kubectl rollout restart statefulset/mysql -n wordpress
+```
 
-- [ ] Resource quotas configured
-- [ ] Monitoring and alerting rules set up
-- [ ] Backup and disaster recovery tested
-- [ ] Security scanning implemented
-- [ ] Performance testing completed
-- [ ] Documentation updated
-- [ ] Runbooks created for operations team
+### Scaling WordPress
+```bash
+# Scale to 3 replicas
+kubectl scale deployment wordpress --replicas=3 -n wordpress
+
+# Or edit the YAML file and apply
+```
+
+## Architecture Overview
+
+```
+Internet → EC2 Instance → Minikube Cluster
+                          ├── WordPress Namespace
+                          │   ├── WordPress Deployment (2 replicas)
+                          │   ├── MySQL StatefulSet (1 replica)
+                          │   ├── Services (ClusterIP)
+                          │   └── PVC (2Gi storage)
+                          └── Monitoring Namespace
+                              ├── Grafana (dashboards)
+                              ├── Prometheus (metrics)
+                              └── PVC (persistent storage)
+```
+
+## Security Notes
+
+- Database credentials stored in Kubernetes Secrets
+- ECR authentication via service account
+- Network policies can be added for additional isolation
+- Images should be scanned for vulnerabilities
 
 ## Performance Optimization
 
-### WordPress Optimization
-- PHP OPcache enabled
-- Redis/Memcached for object caching
-- CDN integration for static assets
-- Database query optimization
-
-### Kubernetes Optimization
-- Appropriate resource requests/limits
-- Pod disruption budgets
-- Node affinity rules
-- Persistent volume optimization
-
-## Migration Notes
-
-### From Docker Compose
-Original docker-compose.yml components mapped to Kubernetes:
-
-| Docker Compose | Kubernetes Equivalent |
-|----------------|----------------------|
-| `wordpress` service | WordPress Deployment + Service |
-| `db` service | MySQL StatefulSet + Service |
-| `volumes` | PersistentVolumeClaim |
-| `networks` | Kubernetes networking (automatic) |
-| Environment variables | ConfigMaps and Secrets |
-
-### Breaking Changes
-- Database persistence now handled by StatefulSet
-- Networking uses Kubernetes services instead of Docker networks
-- Secrets management through Kubernetes Secrets
-- Ingress handling replaces Docker port mappings
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-1. Check the troubleshooting section
-2. Review Kubernetes logs: `kubectl logs <pod-name> -n <namespace>`
-3. Check resource status: `kubectl describe <resource-type> <resource-name> -n <namespace>`
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with appropriate tests
-4. Submit a pull request with detailed description
+- Adjust resource requests/limits based on usage
+- Consider Redis for WordPress object caching
+- Use ReadWriteMany volumes for multi-replica file sharing
+- Implement HPA (Horizontal Pod Autoscaler) for automatic scaling
 
 ---
 
-**Author**: DevOps Workshop Project  
-**Version**: 1.0  
-**Last Updated**: August 2025
-=======
-# Quickstart: Compose and WordPress
-
-You can use Docker Compose to easily run WordPress in an isolated environment
-built with Docker containers. This quick-start guide demonstrates how to use
-Compose to set up and run WordPress. Before starting, make sure you have
-[Compose installed](https://docs.docker.com/compose/install/).
-
-## Define the project
-
-1.  Create an empty project directory.
-
-    You can name the directory something easy for you to remember.
-    This directory is the context for your application image. The
-    directory should only contain resources to build that image.
-
-    This project directory contains a `docker-compose.yml` file which
-    is complete in itself for a good starter wordpress project.
-
-    >**Tip**: You can use either a `.yml` or `.yaml` extension for
-    this file. They both work.
-
-2.  Change into your project directory.
-
-    For example, if you named your directory `my_wordpress`:
-
-    ```console
-    $ cd my_wordpress/
-    ```
-
-3.  Create a `docker-compose.yml` file that starts your
-    `WordPress` blog and a separate `MySQL` instance with volume
-    mounts for data persistence:
-
-    ```yaml
-    services:
-      db:
-        # We use a mariadb image which supports both amd64 & arm64 architecture
-        image: mariadb:10.6.4-focal
-        # If you really want to use MySQL, uncomment the following line
-        #image: mysql:8.0.27
-        command: '--default-authentication-plugin=mysql_native_password'
-        volumes:
-          - db_data:/var/lib/mysql
-        restart: always
-        environment:
-          - MYSQL_ROOT_PASSWORD=somewordpress
-          - MYSQL_DATABASE=wordpress
-          - MYSQL_USER=wordpress
-          - MYSQL_PASSWORD=wordpress
-        expose:
-          - 3306
-          - 33060
-      wordpress:
-        image: wordpress:latest
-        volumes:
-          - wp_data:/var/www/html
-        ports:
-          - 80:80
-        restart: always
-        environment:
-          - WORDPRESS_DB_HOST=db
-          - WORDPRESS_DB_USER=wordpress
-          - WORDPRESS_DB_PASSWORD=wordpress
-          - WORDPRESS_DB_NAME=wordpress
-    volumes:
-      db_data:
-      wp_data:
-    ```
-
-   > **Notes**:
-   >
-   * The docker volumes `db_data` and `wordpress_data` persists updates made by WordPress
-   to the database, as well as the installed themes and plugins. [Learn more about docker volumes](https://docs.docker.com/storage/volumes/)
-   >
-   * WordPress Multisite works only on ports `80` and `443`.
-   {: .note-vanilla}
-
-### Build the project
-
-Now, run `docker compose up -d` from your project directory.
-
-This runs [`docker compose up`](https://docs.docker.com/engine/reference/commandline/compose_up/) in detached mode, pulls
-the needed Docker images, and starts the wordpress and database containers, as shown in
-the example below.
-
-```console
-$ docker compose up -d
-
-Creating network "my_wordpress_default" with the default driver
-Pulling db (mysql:5.7)...
-5.7: Pulling from library/mysql
-efd26ecc9548: Pull complete
-a3ed95caeb02: Pull complete
-<...>
-Digest: sha256:34a0aca88e85f2efa5edff1cea77cf5d3147ad93545dbec99cfe705b03c520de
-Status: Downloaded newer image for mysql:5.7
-Pulling wordpress (wordpress:latest)...
-latest: Pulling from library/wordpress
-efd26ecc9548: Already exists
-a3ed95caeb02: Pull complete
-589a9d9a7c64: Pull complete
-<...>
-Digest: sha256:ed28506ae44d5def89075fd5c01456610cd6c64006addfe5210b8c675881aff6
-Status: Downloaded newer image for wordpress:latest
-Creating my_wordpress_db_1
-Creating my_wordpress_wordpress_1
-```
-
-> **Note**: WordPress Multisite works only on ports `80` and/or `443`.
-If you get an error message about binding `0.0.0.0` to port `80` or `443`
-(depending on which one you specified), it is likely that the port you
-configured for WordPress is already in use by another service.
-
-### Bring up WordPress in a web browser
-
-At this point, WordPress should be running on port `80` of your Docker Host,
-and you can complete the "famous five-minute installation" as a WordPress
-administrator.
-
-> **Note**: The WordPress site is not immediately available on port `80`
-because the containers are still being initialized and may take a couple of
-minutes before the first load.
-
-If you are using Docker Desktop for Mac or Docker Desktop for Windows, you can use
-`http://localhost` as the IP address, and open `http://localhost:80` in a web
-browser.
-
-![Choose language for WordPress install](images/wordpress-lang.png)
-
-![WordPress Welcome](images/wordpress-welcome.png)
-
-### Shutdown and cleanup
-
-The command [`docker compose down`](https://docs.docker.com/engine/reference/commandline/compose_down/) removes the
-containers and default network, but preserves your WordPress database.
-
-The command `docker compose down --volumes` removes the containers, default
-network, and the WordPress database.
-
-## More Compose documentation
-
-* [Docker Compose overview](https://docs.docker.com/compose/)
-* [Install Docker Compose](https://docs.docker.com/compose/install/)
-* [Getting Started with Docker Compose](https://docs.docker.com/compose/gettingstarted/)
-* [Docker Compose Command line reference](https://docs.docker.com/compose/reference/)
-* [Compose file reference](https://docs.docker.com/compose/compose-file/)
-* [Awesome Compose WordPress sample](../../wordpress-mysql/README.md)
->>>>>>> 0b6b3c4 (commit 09012025)
+**Project Type:** DevOps Workshop - Kubernetes Migration  
+**Technology Stack:** Kubernetes, Helm, WordPress, MySQL, Prometheus, Grafana  
+**Cloud Provider:** AWS (ECR for container registry)
