@@ -17,10 +17,9 @@ K8s_finalworkshop/
 │   ├── mysql-service.yaml
 │   ├── wordpress-service.yaml
 │   └── wordpress-ingress.yaml
-├── monitoring/                 # Monitoring stack configuration
-│   ├── grafana_values.yaml
-│   └── prometheus_values.yaml
-└── templates/                  # Helm chart templates (optional)
+└── monitoring/                 # Monitoring stack configuration
+    ├── grafana_values.yaml
+    └── prometheus_values.yaml
 ```
 
 ## Prerequisites
