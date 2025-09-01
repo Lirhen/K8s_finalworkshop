@@ -1,0 +1,10 @@
+alertmanager:
+  enabled: false
+server:
+  service:
+    type: ClusterIP
+    port: 9090
+  persistentVolume:
+    enabled: true
+    size: 2Gi
+
