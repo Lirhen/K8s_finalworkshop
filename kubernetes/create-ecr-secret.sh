@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-pkill -f "kubectl port-forward"
+pkill -f "kubectl port-forward" || true
 
 echo "=== Deleting old namespaces ==="
 kubectl delete namespace wordpress monitoring --ignore-not-found
